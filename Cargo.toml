@@ -1,0 +1,10 @@
+[package]
+name = "ray_tracer"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+indicatif = "0.14"
+png = "0.16"
+rand = "0.7"
+rayon = "1.1"
