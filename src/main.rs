@@ -1,5 +1,12 @@
 use rand::Rng;
-use ray_tracer::{math::{Path, Vec3}, Camera, Object, Material, ScatteringMethod, Scene};
+
+use ray_tracer::{
+	material::{Material, ScatteringMethod},
+	math::{Curve, Vec3},
+
+	Camera, Object, Scene
+};
+
 use std::{fs::File, io::BufWriter};
 
 #[allow(dead_code)]
@@ -9,7 +16,7 @@ fn generate_wide_angle(width: u32, height: u32) -> (Scene, Camera) {
 	let r = (std::f64::consts::PI / 4.0).cos();
 
 	scene.add(Object::Sphere {
-		center: Path::Constant(Vec3(-r, 0.0, -1.0)),
+		center: Curve::Constant(Vec3(-r, 0.0, -1.0)),
 		radius: r,
 
 		material: Material {
@@ -19,7 +26,7 @@ fn generate_wide_angle(width: u32, height: u32) -> (Scene, Camera) {
 	});
 
 	scene.add(Object::Sphere {
-		center: Path::Constant(Vec3(r, 0.0, -1.0)),
+		center: Curve::Constant(Vec3(r, 0.0, -1.0)),
 		radius: r,
 
 		material: Material {
@@ -51,7 +58,7 @@ fn generate_cover(width: u32, height: u32) -> (Scene, Camera) {
 	let mut scene = Scene::new();
 
 	scene.add(Object::Sphere {
-		center: Path::Constant(Vec3(0.0, -1000.0, 0.0)),
+		center: Curve::Constant(Vec3(0.0, -1000.0, 0.0)),
 		radius: 1000.0,
 
 		material: Material {
@@ -72,7 +79,7 @@ fn generate_cover(width: u32, height: u32) -> (Scene, Camera) {
 			if (center - Vec3(4.0, 0.2, 0.0)).len() > 0.9 {
 				scene.add(if choose_mat < 0.8 {
 					Object::Sphere {
-						center: Path::Linear(
+						center: Curve::Linear(
 							center,
 							center + Vec3(0.0, rng.gen_range(0.0, 0.5), 0.0),
 							0.0,
@@ -87,7 +94,7 @@ fn generate_cover(width: u32, height: u32) -> (Scene, Camera) {
 					}
 				} else if choose_mat < 0.95 {
 					Object::Sphere {
-						center: Path::Constant(center),
+						center: Curve::Constant(center),
 						radius: 0.2,
 
 						material: Material {
@@ -97,7 +104,7 @@ fn generate_cover(width: u32, height: u32) -> (Scene, Camera) {
 					}
 				} else {
 					Object::Sphere {
-						center: Path::Constant(center),
+						center: Curve::Constant(center),
 						radius: 0.2,
 
 						material: Material {
@@ -111,7 +118,7 @@ fn generate_cover(width: u32, height: u32) -> (Scene, Camera) {
 	}
 
 	scene.add(Object::Sphere {
-		center: Path::Constant(Vec3(0.0, 1.0, 0.0)),
+		center: Curve::Constant(Vec3(0.0, 1.0, 0.0)),
 		radius: 1.0,
 
 		material: Material {
@@ -121,7 +128,7 @@ fn generate_cover(width: u32, height: u32) -> (Scene, Camera) {
 	});
 
 	scene.add(Object::Sphere {
-		center: Path::Constant(Vec3(-4.0, 1.0, 0.0)),
+		center: Curve::Constant(Vec3(-4.0, 1.0, 0.0)),
 		radius: 1.0,
 
 		material: Material {
@@ -131,7 +138,7 @@ fn generate_cover(width: u32, height: u32) -> (Scene, Camera) {
 	});
 
 	scene.add(Object::Sphere {
-		center: Path::Constant(Vec3(4.0, 1.0, 0.0)),
+		center: Curve::Constant(Vec3(4.0, 1.0, 0.0)),
 		radius: 1.0,
 
 		material: Material {
