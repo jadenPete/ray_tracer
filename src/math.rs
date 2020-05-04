@@ -216,7 +216,7 @@ impl Curve {
 
 /// An axis-aligned minimum bounding box (AABB)
 #[derive(Copy, Clone)]
-pub(crate) struct Aabb {
+pub struct Aabb {
 	pub min: Vec3,
 	pub max: Vec3
 }

@@ -3,96 +3,85 @@ use crate::{
 	math::{Aabb, Curve, Ray, Vec3}
 };
 
-/// An object is a field in the scene that can intercept rays and return a record containing
-/// information about the interaction, thus allowing rays to bounce between different objects.
-///
-/// While I originally defined an Object trait, I have since used an enum to avoid the lifetime and
-/// performance issues commonly associated with trait objects.
-#[derive(Copy, Clone)]
-pub enum Object {
-	Sphere {
-		center: Curve,
-		radius: f64,
-		material: Material
-	}
+use std::sync::Arc;
+
+pub trait Object: Send + Sync {
+	fn aabb(&self, time0: f64, time1: f64) -> Aabb;
+	fn hit(&self, ray: Ray, min_distance: f64, max_distance: f64) -> Option<Hit>;
 }
 
-impl Object {
-	pub(crate) fn aabb(self, time0: f64, time1: f64) -> Aabb {
-		match self {
-			Self::Sphere { center, radius, material: _ } => {
-				let corner = Vec3(radius, radius, radius);
+pub struct Sphere {
+	pub center: Curve,
+	pub radius: f64,
+	pub material: Arc<dyn Material>
+}
 
-				// Explicitly handling constant curves is faster
-				match center {
-					Curve::Constant(v) => Aabb {
-						min: v - corner,
-						max: v + corner
-					},
+impl Object for Sphere {
+	fn aabb(&self, time0: f64, time1: f64) -> Aabb {
+		let corner = Vec3(self.radius, self.radius, self.radius);
 
-					_ => Aabb {
-						min: center.at(time0) - corner,
-						max: center.at(time0) + corner
-					}.merge(Aabb {
-						min: center.at(time1) - corner,
-						max: center.at(time1) + corner
-					})
-				}
-			}
+		// Explicitly handling constant curves is faster
+		match self.center {
+			Curve::Constant(v) => Aabb {
+				min: v - corner,
+				max: v + corner
+			},
+
+			_ => Aabb {
+				min: self.center.at(time0) - corner,
+				max: self.center.at(time0) + corner
+			}.merge(Aabb {
+				min: self.center.at(time1) - corner,
+				max: self.center.at(time1) + corner
+			})
 		}
 	}
 
-	/// Returns a hit record if the object intercepts a ray at a distance within
-	/// [min_distance, max_distance) from the ray's origin
-	pub(crate) fn hit(self, ray: Ray, min_distance: f64, max_distance: f64) -> Option<Hit> {
-		match self {
-			Self::Sphere { center, radius, material } => {
-				let center = center.at(ray.time);
+	fn hit(&self, ray: Ray, min_distance: f64, max_distance: f64) -> Option<Hit> {
+		let center = self.center.at(ray.time);
 
-				// We use the quadratic formula
-				let a = ray.direction.dot(ray.direction);
-				let half_b = ray.direction.dot(ray.origin - center);
-				let c = (ray.origin - center).dot(ray.origin - center) - radius * radius;
+		// We use the quadratic formula
+		let oc = ray.origin - center;
+		let a = ray.direction.dot(ray.direction);
+		let b = ray.direction.dot(oc) * 2.0;
+		let c = oc.dot(oc) - self.radius * self.radius;
 
-				let discriminant = half_b * half_b - a * c;
+		let discriminant = b * b - 4.0 * a * c;
 
-				// If we didn't hit it
-				if discriminant < 0.0 {
-					return None;
-				}
+		// If we didn't hit it
+		if discriminant < 0.0 {
+			return None;
+		}
 
-				let mut distance = (-half_b - discriminant.sqrt()) / a;
+		let mut distance = (-b - discriminant.sqrt()) / (2.0 * a);
 
-				// If the first root is beyond the maximum distance, the second one will be too
-				if distance >= max_distance {
-					return None;
-				}
+		// If the first root is beyond the maximum distance, the second one will be too
+		if distance >= max_distance {
+			return None;
+		}
 
-				// If it's too close, check the second root
-				if distance < min_distance {
-					distance = (-half_b + discriminant.sqrt()) / a;
+		// If it's too close, check the second root
+		if distance < min_distance {
+			distance = (-b + discriminant.sqrt()) / (2.0 * a);
 
-					if distance < min_distance || distance >= max_distance {
-						return None;
-					}
-				}
-
-				let point = ray.at(distance);
-				let normal = (point - center) / radius;
-
-				Some(Hit::new(ray, distance, point, normal, material))
+			if distance < min_distance || distance >= max_distance {
+				return None;
 			}
 		}
+
+		let point = ray.at(distance);
+		let normal = (point - center) / self.radius;
+
+		Some(Hit::new(ray, distance, point, normal, self.material.clone()))
 	}
 }
 
-#[derive(Copy, Clone)]
-pub(crate) struct Hit {
+pub struct Hit {
 	pub ray: Ray,
 	pub distance: f64,
 	pub point: Vec3,
 	pub normal: Vec3,
-	pub material: Material,
+	pub material: Arc<dyn Material>,
 	pub face: Face,
 }
 
@@ -102,7 +91,7 @@ impl Hit {
 		distance: f64,
 		point: Vec3,
 		normal: Vec3,
-		material: Material) -> Hit
+		material: Arc<dyn Material>) -> Hit
 	{
 		let (normal, face) = if ray.direction.dot(normal) <= 0.0 {
 			(normal, Face::Front)
@@ -122,7 +111,7 @@ impl Hit {
 }
 
 #[derive(Copy, Clone)]
-pub(crate) enum Face {
+pub enum Face {
 	Front, // Outside
 	Back   // Inside
 }

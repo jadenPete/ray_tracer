@@ -1,38 +1,43 @@
 use rand::Rng;
 
 use ray_tracer::{
-	material::{Material, ScatteringMethod},
+	material::{Lambertian, Refractive, Specular},
 	math::{Curve, Vec3},
-
-	Camera, Object, Scene
+	object::Sphere,
+	scene::{Camera, Scene}
 };
 
-use std::{fs::File, io::BufWriter};
+use std::{
+	fs::File,
+	io::BufWriter,
+	sync::Arc
+};
 
 #[allow(dead_code)]
 fn generate_wide_angle(width: u32, height: u32) -> (Scene, Camera) {
 	let mut scene = Scene::new();
 
-	let r = (std::f64::consts::PI / 4.0).cos();
+	// Lines up perfectly with the screen's edges
+	let radius = (std::f64::consts::PI / 4.0).cos();
 
-	scene.add(Object::Sphere {
-		center: Curve::Constant(Vec3(-r, 0.0, -1.0)),
-		radius: r,
+	// The blue sphere on the left
+	scene.add(Sphere {
+		center: Curve::Constant(Vec3(-radius, 0.0, -1.0)),
+		radius: radius,
 
-		material: Material {
-			method: ScatteringMethod::Lambertian,
+		material: Arc::new(Lambertian {
 			albedo: Vec3(0.0, 0.0, 1.0)
-		}
+		})
 	});
 
-	scene.add(Object::Sphere {
-		center: Curve::Constant(Vec3(r, 0.0, -1.0)),
-		radius: r,
+	// The red sphere on the right
+	scene.add(Sphere {
+		center: Curve::Constant(Vec3(radius, 0.0, -1.0)),
+		radius: radius,
 
-		material: Material {
-			method: ScatteringMethod::Lambertian,
+		material: Arc::new(Lambertian {
 			albedo: Vec3(1.0, 0.0, 0.0)
-		}
+		})
 	});
 
 	const ORIGIN: Vec3 = Vec3(0.0, 0.0, 0.0);
@@ -57,17 +62,55 @@ fn generate_wide_angle(width: u32, height: u32) -> (Scene, Camera) {
 fn generate_cover(width: u32, height: u32) -> (Scene, Camera) {
 	let mut scene = Scene::new();
 
-	scene.add(Object::Sphere {
+	// The globe
+	scene.add(Sphere {
 		center: Curve::Constant(Vec3(0.0, -1000.0, 0.0)),
 		radius: 1000.0,
 
-		material: Material {
-			method: ScatteringMethod::Lambertian,
+		material: Arc::new(Lambertian {
 			albedo: Vec3(0.5, 0.5, 0.5)
-		}
+		})
 	});
 
+	// The diffuse sphere in the back
+	scene.add(Sphere {
+		center: Curve::Constant(Vec3(-4.0, 1.0, 0.0)),
+		radius: 1.0,
+
+		material: Arc::new(Lambertian {
+			albedo: Vec3(0.4, 0.2, 0.1)
+		})
+	});
+
+	// The glass sphere in the middle
+	scene.add(Sphere {
+		center: Curve::Constant(Vec3(0.0, 1.0, 0.0)),
+		radius: 1.0,
+
+		material: Arc::new(Refractive {
+			albedo: Vec3(1.0, 1.0, 1.0),
+			index: 1.5
+		})
+	});
+
+	// The metal sphere in the front
+	scene.add(Sphere {
+		center: Curve::Constant(Vec3(4.0, 1.0, 0.0)),
+		radius: 1.0,
+
+		material: Arc::new(Specular {
+			albedo: Vec3(0.7, 0.6, 0.5),
+			fuzziness: 0.0
+		})
+	});
+
+	// Generate random spheres
 	let mut rng = rand::thread_rng();
+
+	let refractive = Arc::new(Refractive {
+		albedo: Vec3(1.0, 1.0, 1.0),
+		index: 1.5
+	});
 
 	for i in -11..11 {
 		for j in -11..11 {
@@ -78,7 +121,7 @@ fn generate_cover(width: u32, height: u32) -> (Scene, Camera) {
 
 			if (center - Vec3(4.0, 0.2, 0.0)).len() > 0.9 {
 				scene.add(if choose_mat < 0.8 {
-					Object::Sphere {
+					Sphere {
 						center: Curve::Linear(
 							center,
 							center + Vec3(0.0, rng.gen_range(0.0, 0.5), 0.0),
@@ -87,65 +130,30 @@ fn generate_cover(width: u32, height: u32) -> (Scene, Camera) {
 
 						radius: 0.2,
 
-						material: Material {
-							method: ScatteringMethod::Lambertian,
+						material: Arc::new(Lambertian {
 							albedo: Vec3::random_in_unit_cube() * Vec3::random_in_unit_cube()
-						}
+						})
 					}
 				} else if choose_mat < 0.95 {
-					Object::Sphere {
+					Sphere {
 						center: Curve::Constant(center),
 						radius: 0.2,
 
-						material: Material {
-							method: ScatteringMethod::Reflective(rng.gen_range(0.0, 0.5)),
-							albedo: Vec3::random_in_cube(0.5, 1.0)
-						}
+						material: Arc::new(Specular {
+							albedo: Vec3::random_in_cube(0.5, 1.0),
+							fuzziness: rng.gen_range(0.0, 0.5)
+						})
 					}
 				} else {
-					Object::Sphere {
+					Sphere {
 						center: Curve::Constant(center),
 						radius: 0.2,
-
-						material: Material {
-							method: ScatteringMethod::Refractive(1.5),
-							albedo: Vec3(1.0, 1.0, 1.0)
-						}
+						material: refractive.clone()
 					}
 				});
 			}
 		}
 	}
-
-	scene.add(Object::Sphere {
-		center: Curve::Constant(Vec3(0.0, 1.0, 0.0)),
-		radius: 1.0,
-
-		material: Material {
-			method: ScatteringMethod::Refractive(1.5),
-			albedo: Vec3(1.0, 1.0, 1.0)
-		}
-	});
-
-	scene.add(Object::Sphere {
-		center: Curve::Constant(Vec3(-4.0, 1.0, 0.0)),
-		radius: 1.0,
-
-		material: Material {
-			method: ScatteringMethod::Lambertian,
-			albedo: Vec3(0.4, 0.2, 0.1)
-		}
-	});
-
-	scene.add(Object::Sphere {
-		center: Curve::Constant(Vec3(4.0, 1.0, 0.0)),
-		radius: 1.0,
-
-		material: Material {
-			method: ScatteringMethod::Reflective(0.0),
-			albedo: Vec3(0.7, 0.6, 0.5)
-		}
-	});
 
 	const ORIGIN: Vec3 = Vec3(13.0, 2.0, 3.0);
 	const TARGET: Vec3 = Vec3(0.0, 0.0, 0.0);

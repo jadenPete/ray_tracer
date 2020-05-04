@@ -1,84 +1,124 @@
 use crate::math::Vec3;
 use crate::object::{Hit, Face};
 
-#[derive(Copy, Clone)]
-pub struct Material {
-	pub method: ScatteringMethod,
+pub trait Material: Send + Sync {
+	// Returns a redirection record if the ray wasn't absorbed
+	fn redirect(&self, hit: &Hit) -> Option<Redirection>;
+}
 
-	// How much light is preserved in each channel
+pub struct Redirection {
+	pub direction: Vec3,
 	pub albedo: Vec3
 }
 
-#[derive(Copy, Clone)]
-pub enum ScatteringMethod {
-	// Diffuse
-	Lambertian,
-	Spherical,
-	Hemispherical,
-
-	// Accepts a fuzziness parameter (how "foggy" it is)
-	Reflective(f64),
-
-	// Accepts a refractory index (air ~= 1.0, glass ~= 1.5)
-	Refractive(f64)
+pub struct Lambertian {
+	pub albedo: Vec3
 }
 
-impl ScatteringMethod {
-	// Schlick's approximation uses the cosine of the incidence angle and the refraction index
-	fn schlick(cos: f64, index: f64) -> f64 {
-		let mut r0 = (1.0 - index) / (1.0 + index);
-		r0 *= r0;
-		r0 + (1.0 - r0) * (1.0 - cos).powi(5)
+impl Material for Lambertian {
+	fn redirect(&self, hit: &Hit) -> Option<Redirection> {
+		Some(Redirection {
+			direction: (hit.normal + Vec3::random_on_unit_sphere()).unit(),
+			albedo: self.albedo
+		})
 	}
+}
 
-	/// Returns the direction of the newly scattered ray
-	pub(crate) fn scatter(self, hit: Hit) -> Option<Vec3> {
-		match self {
-			Self::Lambertian => Some((hit.normal + Vec3::random_on_unit_sphere()).unit()),
-			Self::Spherical => Some((hit.normal + Vec3::random_in_unit_sphere()).unit()),
+pub struct Spherical {
+	pub albedo: Vec3
+}
 
-			Self::Hemispherical => {
+impl Material for Spherical {
+	fn redirect(&self, hit: &Hit) -> Option<Redirection> {
+		Some(Redirection {
+			direction: (hit.normal + Vec3::random_in_unit_sphere()),
+			albedo: self.albedo
+		})
+	}
+}
+
+pub struct Hemispherical {
+	pub albedo: Vec3
+}
+
+impl Material for Hemispherical {
+	fn redirect(&self, hit: &Hit) -> Option<Redirection> {
+		Some(Redirection {
+			direction: {
 				let direction = Vec3::random_in_unit_sphere();
 
-				Some((hit.normal + if direction.dot(hit.normal) >= 0.0 {
+				(hit.normal + if direction.dot(hit.normal) >= 0.0 {
 					direction
 				} else {
 					-direction
-				}).unit())
-			}
+				}).unit()
+			},
 
-			Self::Reflective(fuzziness) => {
-				let r = hit.ray.direction;
-				let n = hit.normal;
+			albedo: self.albedo
+		})
+	}
+}
 
-				let direction = (r - n * r.dot(n) * 2.0 + Vec3::random_in_unit_sphere() * fuzziness).unit();
+pub struct Specular {
+	pub albedo: Vec3,
+	pub fuzziness: f64
+}
 
-				if direction.dot(n) > 0.0 {
-					Some(direction)
-				} else {
-					None
-				}
-			}
+impl Specular {
+	/// Independent from the redirect function because it may be used during refraction
+	fn reflect(hit: &Hit) -> Vec3 {
+		hit.ray.direction - hit.normal * hit.ray.direction.dot(hit.normal) * 2.0
+	}
+}
 
-			Self::Refractive(index) => {
-				let r = hit.ray.direction;
-				let n = hit.normal;
+impl Material for Specular {
+	fn redirect(&self, hit: &Hit) -> Option<Redirection> {
+		let direction = (Self::reflect(hit) + Vec3::random_in_unit_sphere() * self.fuzziness).unit();
 
-				let cos = -r.dot(n);
-
-				let sin_ratio = match hit.face {
-					Face::Front => 1.0 / index,
-					Face::Back => index
-				};
-
-				let cos_ratio = (1.0 - sin_ratio * sin_ratio * (1.0 - cos * cos)).sqrt();
-
-				if cos_ratio.is_nan() || rand::random::<f64>() < Self::schlick(cos, index) {
-					ScatteringMethod::Reflective(0.0).scatter(hit)
-				} else {
-					Some((r + n * cos) * sin_ratio - n * cos_ratio)
-				}
-			}
+		if direction.dot(hit.normal) > 0.0 {
+			Some(Redirection {
+				direction: direction,
+				albedo: self.albedo
+			})
+		} else {
+			None
 		}
+	}
+}
+
+pub struct Refractive {
+	pub albedo: Vec3,
+	pub index: f64
+}
+
+impl Refractive {
+	fn schlick(&self, cos: f64) -> f64 {
+		let mut r0 = (1.0 - self.index) / (1.0 + self.index);
+		r0 *= r0;
+		r0 + (1.0 - r0) * (1.0 - cos).powi(5)
+	}
+}
+
+impl Material for Refractive {
+	fn redirect(&self, hit: &Hit) -> Option<Redirection> {
+		let cos = -hit.ray.direction.dot(hit.normal);
+
+		let sin_ratio = match hit.face {
+			Face::Front => 1.0 / self.index,
+			Face::Back => self.index
+		};
+
+		let cos_ratio = (1.0 - sin_ratio * sin_ratio * (1.0 - cos * cos)).sqrt();
+
+		Some(Redirection {
+			direction: if cos_ratio.is_nan() || rand::random::<f64>() < self.schlick(cos) {
+				Specular::reflect(hit)
+			} else {
+				(hit.ray.direction + hit.normal * cos) * sin_ratio - hit.normal * cos_ratio
+			},
+
+			albedo: self.albedo
+		})
+
 	}
 }
