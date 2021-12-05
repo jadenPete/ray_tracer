@@ -5,8 +5,10 @@ A multithreaded path tracer written in Rust, based on Peter Shirley's "Ray Traci
 
 ## Compilation & Usage
 
-`cargo build`
-`cargo run`
+```
+$ cargo build
+$ cargo run
+```
 
 The program will display a status bar indicating the time elapsed, ETA, how many pixels have been and will be rendered, and speed:
 
